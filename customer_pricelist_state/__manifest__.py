@@ -5,7 +5,7 @@
     'author': 'Quodoo',
     'category': 'Sales',
     'license': 'AGPL-3',
-    'depends': ['base', 'product'],
+    'depends': ['base', 'product', 'website_sale'],
     'data': [
         'views/product_pricelist_views.xml',
     ],
