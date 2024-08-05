@@ -1,5 +1,7 @@
 from odoo import models, fields, api, _
 from odoo.exceptions import ValidationError
+from odoo.osv import expression
+
 from odoo.addons.website.models import ir_http
 
 
@@ -39,7 +41,9 @@ class ProductPricelist(models.Model):
             r.available_countries = r.country_group_ids.mapped('country_ids.id') or False
                 
             
-    def _get_partner_pricelist_multi(self, partner_ids, company_id=None):
+    # res.partner.property_product_pricelist field computation
+    @api.model
+    def _get_partner_pricelist_multi(self, partner_ids):
         """ Override 
             to enable filtering customers' price lists based on their country_id and state_id
             
@@ -47,23 +51,36 @@ class ProductPricelist(models.Model):
                 instead of current user's company
             :return: a dict {partner_id: pricelist}
         """
-        # `partner_ids` might be ID from inactive uers. We should use active_test
+        # `partner_ids` might be ID from inactive users. We should use active_test
         # as we will do a search() later (real case for website public user).
         Partner = self.env['res.partner'].with_context(active_test=False)
-        website = ir_http.get_request_website()
-        if not company_id and website:
-            company_id = website.company_id.id
-        company_id = company_id or self.env.company.id
+        company_id = self.env.company.id
 
         Property = self.env['ir.property'].with_company(company_id)
         Pricelist = self.env['product.pricelist']
         pl_domain = self._get_partner_pricelist_multi_search_domain_hook(company_id)
 
         # if no specific property, try to find a fitting pricelist
-        result = Property._get_multi('property_product_pricelist', Partner._name, partner_ids)
+        specific_properties = Property._get_multi(
+            'property_product_pricelist', Partner._name,
+            list(models.origin_ids(partner_ids)),  # Some NewID can be in the partner_ids
+        )
+        result = {}
+        remaining_partner_ids = []
+        for pid in partner_ids:
+            if (
+                specific_properties.get(pid)
+                and specific_properties[pid]._get_partner_pricelist_multi_filter_hook()
+            ):
+                result[pid] = specific_properties[pid]
+            elif (
+                isinstance(pid, models.NewId) and specific_properties.get(pid.origin)
+                and specific_properties[pid.origin]._get_partner_pricelist_multi_filter_hook()
+            ):
+                result[pid] = specific_properties[pid.origin]
+            else:
+                remaining_partner_ids.append(pid)
 
-        remaining_partner_ids = [pid for pid, val in result.items() if not val or
-                                 not val._get_partner_pricelist_multi_filter_hook()]
         if remaining_partner_ids:
             # get fallback pricelist when no pricelist for a given country
             pl_fallback = (
@@ -72,24 +89,19 @@ class ProductPricelist(models.Model):
                 Pricelist.search(pl_domain, limit=1)
             )
             # group partners by country, and find a pricelist for each country
-            domain = [('id', 'in', remaining_partner_ids)]
-            groups = Partner.read_group(domain, ['country_id'], ['country_id'])
-            
-            for group in groups:
-                country_group_domain = []
-                country_id = group['country_id'] and group['country_id'][0]
-                country_group_domain.append(('country_ids', '=', country_id))
-                for partner in Partner.search(group['__domain']):
-                    # Always check customer State if customers does not setup there state. 
-                    # Return the pricelist without config states
-                    if partner['state_id']:
-                        country_group_domain.append(('state_ids', '=', partner['state_id'] and partner['state_id']['id']))
-                        
-                    pl = Pricelist.search(pl_domain + country_group_domain, limit=1)
-                    
+            remaining_partners = self.env['res.partner'].browse(remaining_partner_ids)
+            partners_by_country = remaining_partners.grouped('country_id')
+            for country, partners in partners_by_country.items():
+                country_id = country.id if country else False
+                country_group_domain = expression.OR([
+                                         expression.AND([[('country_group_ids.country_ids', '=', country_id)], [('country_ids', '=', False)]]),
+                                         [('country_ids', '=', country_id)]
+                                         ])
+                partners_by_state = partners.grouped('state_id')
+                for state, partners_state in partners_by_state.items():
+                    state_group_domain = expression.OR([[('state_ids', '=', state.id if state else False)], [('state_ids', '=', False)]])
+                    pl = Pricelist.search(expression.AND([pl_domain, country_group_domain,  state_group_domain]), limit=1)
                     pl = pl or pl_fallback
-                    result[partner['id']] = pl
-           
+                    result.update(dict.fromkeys(partners_state._ids, pl))
 
         return result
-    
