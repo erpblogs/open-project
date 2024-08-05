@@ -40,9 +40,16 @@ class ProductPricelist(models.Model):
                 
             
     def _get_partner_pricelist_multi(self, partner_ids, company_id=None):
-        """ Override 
-            to enable filtering customers' price lists based on their country_id and state_id
-            
+        """ Retrieve the applicable pricelist for given partners in a given company.
+
+            It will return the first found pricelist in this order:
+            First, the pricelist of the specific property (res_id set), this one
+                   is created when saving a pricelist on the partner form view.
+            Else, it will return the pricelist of the partner country group
+            Else, it will return the generic property (res_id not set), this one
+                  is created on the company creation.
+            Else, it will return the first available pricelist
+
             :param company_id: if passed, used for looking up properties,
                 instead of current user's company
             :return: a dict {partner_id: pricelist}
@@ -50,9 +57,6 @@ class ProductPricelist(models.Model):
         # `partner_ids` might be ID from inactive uers. We should use active_test
         # as we will do a search() later (real case for website public user).
         Partner = self.env['res.partner'].with_context(active_test=False)
-        website = ir_http.get_request_website()
-        if not company_id and website:
-            company_id = website.company_id.id
         company_id = company_id or self.env.company.id
 
         Property = self.env['ir.property'].with_company(company_id)
@@ -74,22 +78,11 @@ class ProductPricelist(models.Model):
             # group partners by country, and find a pricelist for each country
             domain = [('id', 'in', remaining_partner_ids)]
             groups = Partner.read_group(domain, ['country_id'], ['country_id'])
-            
             for group in groups:
-                country_group_domain = []
                 country_id = group['country_id'] and group['country_id'][0]
-                country_group_domain.append(('country_ids', '=', country_id))
-                for partner in Partner.search(group['__domain']):
-                    # Always check customer State if customers does not setup there state. 
-                    # Return the pricelist without config states
-                    if partner['state_id']:
-                        country_group_domain.append(('state_ids', '=', partner['state_id'] and partner['state_id']['id']))
-                        
-                    pl = Pricelist.search(pl_domain + country_group_domain, limit=1)
-                    
-                    pl = pl or pl_fallback
-                    result[partner['id']] = pl
-           
+                pl = Pricelist.search(pl_domain + [('country_group_ids.country_ids', '=', country_id)], limit=1)
+                pl = pl or pl_fallback
+                for pid in Partner.search(group['__domain']).ids:
+                    result[pid] = pl
 
         return result
-    
