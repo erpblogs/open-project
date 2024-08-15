@@ -14,7 +14,9 @@ class APLSResPartner(models.Model):
         if self.zip:
             zipcode_id =  self.env['res.country.zipcode'].search([('name', '=', self.zip)], limit=1)
             pls = Pricelist.search([('pricelist_code', '=', zipcode_id.pricelist_code)], limit=1)
-            self.property_product_pricelist = pls.id
-            self.state_id = zipcode_id.state_id
-            self.country_id = zipcode_id.country_id
-    
+            
+            self.write({
+                'country_id': zipcode_id.country_id,
+                'state_id': zipcode_id.state_id,
+                'property_product_pricelist': pls.id
+            })

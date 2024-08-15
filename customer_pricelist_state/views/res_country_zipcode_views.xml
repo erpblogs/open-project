@@ -38,6 +38,6 @@
               action="action_res_country_zipcode"/> -->
 
     <menuitem id="menu_res_country_zipcode_sale" name="State Zip Codes"
-              parent="sale.prod_config_main"
+              parent="sale.prod_config_main" sequence="100"
               action="action_res_country_zipcode_sale"/>
 </odoo>
