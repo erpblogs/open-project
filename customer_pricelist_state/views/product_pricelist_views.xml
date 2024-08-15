@@ -9,11 +9,7 @@
             <field name="arch" type="xml">
                 <!-- Add the custom fields into the 'Availability' group -->
                 <xpath expr="//field[@name='country_group_ids']" position="after">
-                    <field name="available_countries" invisible="1" />
-                    <field name="country_ids" widget="many2many_tags"
-                        domain="[('id', 'in', available_countries)]"  options="{'no_create': True}"/>
-                        
-                    <field name="state_ids" widget="many2many_tags" domain="[('country_id', 'in', country_ids)]"/>
+                    <field name="pricelist_code" />
                 </xpath>
             </field>
         </record>

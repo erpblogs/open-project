@@ -1,15 +1,20 @@
 # -*- coding: utf-8 -*-
-
-from odoo import api, fields, models
+from odoo import models, api, _
 
 
 class APLSResPartner(models.Model):
     _inherit = 'res.partner'
 
-
     # Automating Price List Assignment Based on Customer State
-    @api.onchange('state_id')
+    @api.onchange('zip')
     def onchage_state_pricelist(self):
-        res = self.env['product.pricelist']._get_partner_pricelist_multi(self._ids)
-        for partner in self:
-            partner.property_product_pricelist = res.get(partner.id)
+        # partner_id = self.id.origin if isinstance(self.id, models.NewId)  else self.id
+        Pricelist = self.env['product.pricelist']
+        
+        if self.zip:
+            zipcode_id =  self.env['res.country.zipcode'].search([('name', '=', self.zip)], limit=1)
+            pls = Pricelist.search([('pricelist_code', '=', zipcode_id.pricelist_code)], limit=1)
+            self.property_product_pricelist = pls.id
+            self.state_id = zipcode_id.state_id
+            self.country_id = zipcode_id.country_id
+    
