@@ -1,0 +1,42 @@
+<odoo>
+
+<data>
+    <record id="partner_action_update_price_list" model="ir.actions.server">
+        <field name="name">Update Price List</field>
+        <field name="model_id" ref="base.model_res_partner"/>
+        <field name="state">code</field>
+        <field name="code">
+company_id = env.company.id
+Pricelist = env['product.pricelist']
+Property = env['ir.property'].with_company(company_id)
+
+pl_domain = Pricelist._get_partner_pricelist_multi_search_domain_hook(company_id)
+pl_fallback = (
+    Pricelist.search(pl_domain + [('country_group_ids', '=', False)], limit=1) or
+    Property._get('property_product_pricelist', 'res.partner') or
+    Pricelist.search(pl_domain, limit=1)
+)
+            
+if records:
+    print(records)
+    for record in records:
+        state_group_domain = [('name', '=', record.state_id.name)]
+        prl_id =  Pricelist.search(state_group_domain, limit=1)
+        
+        record.write({
+            'property_product_pricelist': prl_id or False
+        })
+
+        </field>
+    </record>
+
+    <record id="partner_auto_update_customer_price_list" model="base.automation">
+        <field name="name">Update Price List</field>
+        <field name="model_id" ref="base.model_res_partner"/>
+        <field name="trigger">on_change</field>
+        <field name="on_change_field_ids" eval="[(6, 0, [ref('base.field_state_id__name')])]" />
+        <field name="action_server_ids" eval="[(6, 0, [ref('customer_pricelist_state.partner_action_update_price_list')])]" />
+    </record>
+
+</data>
+</odoo>
